@@ -1,9 +1,8 @@
 streamlit
 streamlit-chat
-
 langchain==0.1.15
 langchain-community==0.0.33
 chromadb
 sentence-transformers
 pypdfium2
-huggingface_hub
+groq
