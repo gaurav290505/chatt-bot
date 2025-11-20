@@ -1,46 +1,47 @@
 import os
-from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import Chroma
 from langchain.document_loaders import PyPDFium2Loader
+from langchain_community.llms import HuggingFaceHub
 from langchain.chains.question_answering import load_qa_chain
-# from langchain.llms import OpenAI
-from langchain.chat_models import ChatOpenAI
 
 
 class PDFQuery:
-    def __init__(self, openai_api_key=None) -> None:
-        # Store API key in env so LangChain/ChatOpenAI can pick it up
-        self.embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
-        os.environ["OPENAI_API_KEY"] = openai_api_key or ""
+    def __init__(self, hf_token=None):
+        os.environ["HUGGINGFACEHUB_API_TOKEN"] = hf_token or ""
+
+        self.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
             chunk_overlap=200,
         )
-        # self.llm = OpenAI(temperature=0, openai_api_key=openai_api_key)
-        self.llm = ChatOpenAI(temperature=0, openai_api_key=openai_api_key)
+
+        self.llm = HuggingFaceHub(
+            repo_id="mistralai/Mistral-7B-Instruct-v0.2",
+            model_kwargs={"temperature": 0.1, "max_length": 512},
+        )
+
         self.chain = None
         self.db = None
 
-    def ask(self, question: str) -> str:
+    def ask(self, question: str):
         if self.chain is None:
-            response = "Please, add a document."
-        else:
-            docs = self.db.get_relevant_documents(question)
-            response = self.chain.run(input_documents=docs, question=question)
+            return "Please upload a PDF first."
+
+        docs = self.db.get_relevant_documents(question)
+        response = self.chain.run(input_documents=docs, question=question)
         return response
 
-    def ingest(self, file_path: os.PathLike) -> None:
-        loader = PyPDFium2Loader(file_path)
-        documents = loader.load()
-        splitted_documents = self.text_splitter.split_documents(documents)
-        self.db = Chroma.from_documents(
-            splitted_documents,
-            self.embeddings,
-        ).as_retriever()
-        # self.chain = load_qa_chain(OpenAI(temperature=0), chain_type="stuff")
-        self.chain = load_qa_chain(ChatOpenAI(temperature=0), chain_type="stuff")
+    def ingest(self, path):
+        loader = PyPDFium2Loader(path)
+        docs = loader.load()
+        split_docs = self.text_splitter.split_documents(docs)
 
-    def forget(self) -> None:
+        self.db = Chroma.from_documents(split_docs, self.embeddings).as_retriever()
+
+        self.chain = load_qa_chain(self.llm, chain_type="stuff")
+
+    def forget(self):
         self.db = None
         self.chain = None
