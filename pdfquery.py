@@ -18,9 +18,9 @@ class PDFQuery:
         )
 
         self.llm = HuggingFaceHub(
-            repo_id="mistralai/Mistral-7B-Instruct-v0.2",
-            model_kwargs={"temperature": 0.1, "max_length": 512},
-        )
+    repo_id="google/flan-t5-large",
+    model_kwargs={"temperature": 0.1, "max_length": 256},
+)
 
         self.chain = None
         self.db = None
