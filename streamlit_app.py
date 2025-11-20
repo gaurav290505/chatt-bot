@@ -4,7 +4,8 @@ import streamlit as st
 from streamlit_chat import message
 from pdfquery import PDFQuery
 
-st.set_page_config(page_title="ChatPDF")
+
+st.set_page_config(page_title="Free ChatPDF")
 
 
 def display_messages():
@@ -15,103 +16,80 @@ def display_messages():
 
 
 def process_input():
-    if st.session_state.get("user_input") and len(st.session_state["user_input"].strip()) > 0:
+    if st.session_state.get("user_input") and st.session_state["user_input"].strip():
         user_text = st.session_state["user_input"].strip()
+
         with st.session_state["thinking_spinner"], st.spinner("Thinking..."):
-            query_text = st.session_state["pdfquery"].ask(user_text)
+            reply = st.session_state["pdfquery"].ask(user_text)
 
         st.session_state["messages"].append((user_text, True))
-        st.session_state["messages"].append((query_text, False))
+        st.session_state["messages"].append((reply, False))
 
 
 def read_and_save_file():
-    # reset the knowledge base and chat
     st.session_state["pdfquery"].forget()
     st.session_state["messages"] = []
-    st.session_state["user_input"] = ""
 
     for file in st.session_state["file_uploader"]:
-        # temporarily save uploaded file
         with tempfile.NamedTemporaryFile(delete=False) as tf:
             tf.write(file.getbuffer())
-            file_path = tf.name
+            path = tf.name
 
-        # ingest into vector store
-        with st.session_state["ingestion_spinner"], st.spinner(f"Ingesting {file.name}"):
-            st.session_state["pdfquery"].ingest(file_path)
-
-        os.remove(file_path)
-
-
-def is_openai_api_key_set() -> bool:
-    return bool(st.session_state.get("OPENAI_API_KEY")) and len(st.session_state["OPENAI_API_KEY"]) > 0
+        with st.session_state["ingest_spinner"], st.spinner(f"Ingesting {file.name}"):
+            st.session_state["pdfquery"].ingest(path)
 
 
 def main():
-    # ---------- Init session state ----------
-    if len(st.session_state) == 0:
+    if "messages" not in st.session_state:
         st.session_state["messages"] = []
-        # Prefer Streamlit secrets, fall back to env var
-        default_key = st.secrets.get("OPENAI_API_KEY", os.environ.get("OPENAI_API_KEY", ""))
-        st.session_state["OPENAI_API_KEY"] = default_key
 
-        if is_openai_api_key_set():
-            st.session_state["pdfquery"] = PDFQuery(st.session_state["OPENAI_API_KEY"])
-        else:
-            st.session_state["pdfquery"] = None
+    if "hf_token" not in st.session_state:
+        st.session_state["hf_token"] = st.secrets.get("HF_TOKEN", "")
 
-    st.header("ChatPDF")
+    st.header("Free ChatPDF (HuggingFace API)")
 
-    # ---------- API key input (can override secret) ----------
-    if st.text_input(
-        "OpenAI API Key",
-        value=st.session_state["OPENAI_API_KEY"],
-        key="input_OPENAI_API_KEY",
+    # Token Input
+    token = st.text_input(
+        "HuggingFace API Token",
         type="password",
-        help="You can also set this in Streamlit Cloud secrets as OPENAI_API_KEY.",
-    ):
-        if (
-            len(st.session_state["input_OPENAI_API_KEY"]) > 0
-            and st.session_state["input_OPENAI_API_KEY"] != st.session_state["OPENAI_API_KEY"]
-        ):
-            st.session_state["OPENAI_API_KEY"] = st.session_state["input_OPENAI_API_KEY"]
-            if st.session_state["pdfquery"] is not None:
-                st.warning("API key changed. Please upload the files again.")
-            st.session_state["messages"] = []
-            st.session_state["user_input"] = ""
-            st.session_state["pdfquery"] = PDFQuery(st.session_state["OPENAI_API_KEY"])
+        value=st.session_state["hf_token"],
+        help="Create free token at huggingface.co/settings/tokens",
+    )
 
-    # If no key -> disable rest of UI
-    if not is_openai_api_key_set():
-        st.info("Please enter your OpenAI API key to start.")
+    if token and token != st.session_state["hf_token"]:
+        st.session_state["hf_token"] = token
+        st.session_state["pdfquery"] = PDFQuery(token)
+        st.session_state["messages"] = []
+
+    if "pdfquery" not in st.session_state:
+        st.session_state["pdfquery"] = PDFQuery(st.session_state["hf_token"])
+
+    if not st.session_state["hf_token"]:
+        st.warning("Please enter a free HuggingFace token to continue.")
         st.stop()
 
-    # ---------- File upload ----------
-    st.subheader("Upload a document")
+    # File Upload
+    st.subheader("Upload PDF")
     st.file_uploader(
-        "Upload document",
+        "Upload PDF",
         type=["pdf"],
         key="file_uploader",
-        on_change=read_and_save_file,
-        label_visibility="collapsed",
         accept_multiple_files=True,
-        disabled=not is_openai_api_key_set(),
+        on_change=read_and_save_file,
     )
 
-    st.session_state["ingestion_spinner"] = st.empty()
+    st.session_state["ingest_spinner"] = st.empty()
 
-    # ---------- Chat area ----------
+    # Chat UI
     display_messages()
-    st.text_input(
-        "Message",
-        key="user_input",
-        disabled=not is_openai_api_key_set(),
-        on_change=process_input,
-    )
 
-    st.divider()
-    st.markdown("Source code based on: [Github ChatPDF](https://github.com/Anil-matcha/ChatPDF)")
+    st.text_input("Ask something...", key="user_input", on_change=process_input)
 
 
 if __name__ == "__main__":
     main()
+
+
+if __name__ == "__main__":
+    main()
+
