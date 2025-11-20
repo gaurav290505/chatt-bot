@@ -1,11 +1,9 @@
-streamlit==1.36.0
-streamlit-chat==0.0.2.2
+streamlit
+streamlit-chat
 
-# LangChain + OpenAI + vector store
-langchain==0.0.316
-openai==0.28.0
-chromadb==0.3.22
-tiktoken==0.4.0
-
-# PDF loader
-pypdfium2==4.15.0
+langchain==0.1.15
+langchain-community==0.0.33
+chromadb
+sentence-transformers
+pypdfium2
+huggingface_hub
