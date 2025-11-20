@@ -4,33 +4,34 @@ import streamlit as st
 from streamlit_chat import message
 from pdfquery import PDFQuery
 
-
 st.set_page_config(page_title="Free ChatPDF")
 
 
 def display_messages():
     st.subheader("Chat")
     for i, (msg, is_user) in enumerate(st.session_state["messages"]):
-        message(msg, is_user=is_user, key=str(i))
+        message(msg, is_user=is_user, key=f"msg_{i}")
     st.session_state["thinking_spinner"] = st.empty()
 
 
 def process_input():
-    if st.session_state.get("user_input") and st.session_state["user_input"].strip():
-        user_text = st.session_state["user_input"].strip()
+    user_text = st.session_state.get("user_msg", "").strip()
 
+    if user_text:
         with st.session_state["thinking_spinner"], st.spinner("Thinking..."):
             reply = st.session_state["pdfquery"].ask(user_text)
 
         st.session_state["messages"].append((user_text, True))
         st.session_state["messages"].append((reply, False))
 
+        st.session_state["user_msg"] = ""  # clear input
+
 
 def read_and_save_file():
     st.session_state["pdfquery"].forget()
     st.session_state["messages"] = []
 
-    for file in st.session_state["file_uploader"]:
+    for file in st.session_state["uploaded_files"]:
         with tempfile.NamedTemporaryFile(delete=False) as tf:
             tf.write(file.getbuffer())
             path = tf.name
@@ -40,6 +41,7 @@ def read_and_save_file():
 
 
 def main():
+    # ---------- Init session ----------
     if "messages" not in st.session_state:
         st.session_state["messages"] = []
 
@@ -48,11 +50,12 @@ def main():
 
     st.header("Free ChatPDF (HuggingFace API)")
 
-    # Token Input
+    # ---------- Token input ----------
     token = st.text_input(
         "HuggingFace API Token",
-        type="password",
         value=st.session_state["hf_token"],
+        key="token_input",
+        type="password",
         help="Create free token at huggingface.co/settings/tokens",
     )
 
@@ -65,25 +68,29 @@ def main():
         st.session_state["pdfquery"] = PDFQuery(st.session_state["hf_token"])
 
     if not st.session_state["hf_token"]:
-        st.warning("Please enter a free HuggingFace token to continue.")
+        st.warning("Please enter your free HuggingFace API token.")
         st.stop()
 
-    # File Upload
+    # ---------- File upload ----------
     st.subheader("Upload PDF")
     st.file_uploader(
         "Upload PDF",
         type=["pdf"],
-        key="file_uploader",
+        key="uploaded_files",
         accept_multiple_files=True,
         on_change=read_and_save_file,
     )
 
     st.session_state["ingest_spinner"] = st.empty()
 
-    # Chat UI
+    # ---------- Chat area ----------
     display_messages()
 
-    st.text_input("Ask something...", key="user_input", on_change=process_input)
+    st.text_input(
+        "Ask something...",
+        key="user_msg",
+        on_change=process_input,
+    )
 
 
 if __name__ == "__main__":
