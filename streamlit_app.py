@@ -1,87 +1,70 @@
 import os
-import tempfile
 import streamlit as st
-from streamlit_chat import message
 from pdfquery import PDFQuery
 
-st.set_page_config(page_title="ChatPDF (Groq Llama-3)")
+
+st.set_page_config(page_title="Free ChatPDF (Groq)", page_icon="📄")
 
 
-def show_messages():
-    st.subheader("Chat")
-    for i, (msg, is_user) in enumerate(st.session_state["messages"]):
-        message(msg, is_user=is_user, key=f"msg_{i}")
-
-    st.session_state["thinking"] = st.empty()
-
-
-def on_user_message():
-    user_text = st.session_state["chat_input"].strip()
-    if not user_text:
-        return
-
-    with st.session_state["thinking"], st.spinner("Thinking..."):
-        reply = st.session_state["pdf"].ask(user_text)
-
-    st.session_state["messages"].append((user_text, True))
-    st.session_state["messages"].append((reply, False))
-    st.session_state["chat_input"] = ""
-
-
-def on_pdf_upload():
-    st.session_state["pdf"].forget()
-    st.session_state["messages"] = []
-
-    for file in st.session_state["pdf_files"]:
-        with tempfile.NamedTemporaryFile(delete=False) as tf:
-            tf.write(file.getbuffer())
-            path = tf.name
-
-        with st.session_state["loading"], st.spinner(f"Ingesting {file.name}..."):
-            st.session_state["pdf"].ingest(path)
+def init_state():
+    if "pdf" not in st.session_state:
+        st.session_state["pdf"] = None
+    if "history" not in st.session_state:
+        st.session_state["history"] = []
 
 
 def main():
-    if "messages" not in st.session_state:
-        st.session_state["messages"] = []
+    init_state()
 
-    st.title("📄 ChatPDF — Powered by Groq Llama-3")
+    st.title("📄 Free ChatPDF (Groq API)")
+    st.write("Upload a PDF, ask questions, and get answers powered by Groq `llama3-8b-8192`.")
 
-    # API KEY
-    groq_key = st.text_input(
-        "Enter your GROQ API key",
-        value=st.secrets.get("GROQ_API_KEY", ""),
-        type="password",
-        key="groq_key_input",
-    )
+    # Show whether GROQ_API_KEY exists
+    if not os.getenv("GROQ_API_KEY"):
+        st.warning(
+            "⚠️ `GROQ_API_KEY` is not set in your Streamlit secrets / environment.\n\n"
+            "In Streamlit Cloud → App → **Settings → Secrets**, add:\n\n"
+            "```toml\nGROQ_API_KEY = \"your_groq_key_here\"\n```"
+        )
 
-    if not groq_key:
-        st.info("Get your free key: https://console.groq.com/keys")
-        st.stop()
+    uploaded_file = st.file_uploader("Upload a PDF", type=["pdf"])
 
-    if "pdf" not in st.session_state:
-        st.session_state["pdf"] = PDFQuery(groq_key)
+    if uploaded_file is not None:
+        # Save to a temporary file
+        with open("uploaded.pdf", "wb") as f:
+            f.write(uploaded_file.read())
 
-    # PDF UPLOAD
-    st.subheader("Upload PDF(s)")
-    st.file_uploader(
-        "Choose PDF files",
-        type=["pdf"],
-        key="pdf_files",
-        accept_multiple_files=True,
-        on_change=on_pdf_upload,
-    )
+        # Initialize PDFQuery once per file
+        if st.session_state["pdf"] is None or st.session_state.get("current_filename") != uploaded_file.name:
+            st.session_state["pdf"] = PDFQuery("uploaded.pdf")
+            st.session_state["current_filename"] = uploaded_file.name
+            st.session_state["history"] = []
 
-    st.session_state["loading"] = st.empty()
+        st.success(f"Loaded: {uploaded_file.name}")
 
-    # CHAT
-    show_messages()
+        st.subheader("Ask a question about the PDF")
 
-    st.text_input(
-        "Ask a question...",
-        key="chat_input",
-        on_change=on_user_message,
-    )
+        user_text = st.text_input("Your question", key="user_question")
+
+        if st.button("Ask"):
+            if user_text.strip():
+                with st.spinner("Thinking..."):
+                    try:
+                        reply = st.session_state["pdf"].ask(user_text)
+                        st.session_state["history"].append((user_text, reply))
+                    except Exception as e:
+                        st.error(f"Error while querying Groq: {e}")
+            else:
+                st.warning("Please enter a question first.")
+
+        if st.session_state["history"]:
+            st.subheader("Chat history")
+            for q, a in reversed(st.session_state["history"]):
+                st.markdown(f"**You:** {q}")
+                st.markdown(f"**Bot:** {a}")
+                st.markdown("---")
+    else:
+        st.info("👆 Upload a PDF to start.")
 
 
 if __name__ == "__main__":
