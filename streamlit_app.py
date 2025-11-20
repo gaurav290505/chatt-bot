@@ -4,18 +4,19 @@ import streamlit as st
 from streamlit_chat import message
 from pdfquery import PDFQuery
 
-st.set_page_config(page_title="Free ChatPDF")
+st.set_page_config(page_title="ChatPDF (Groq Llama-3)")
 
 
-def display_messages():
+def show_messages():
     st.subheader("Chat")
     for i, (msg, is_user) in enumerate(st.session_state["messages"]):
-        message(msg, is_user=is_user, key=f"chat_msg_{i}")
+        message(msg, is_user=is_user, key=f"msg_{i}")
+
     st.session_state["thinking"] = st.empty()
 
 
-def process_input():
-    user_text = st.session_state.get("chat_input", "").strip()
+def on_user_message():
+    user_text = st.session_state["chat_input"].strip()
     if not user_text:
         return
 
@@ -27,69 +28,59 @@ def process_input():
     st.session_state["chat_input"] = ""
 
 
-def upload_pdf():
+def on_pdf_upload():
     st.session_state["pdf"].forget()
     st.session_state["messages"] = []
 
-    for file in st.session_state["uploaded_pdf_files"]:
+    for file in st.session_state["pdf_files"]:
         with tempfile.NamedTemporaryFile(delete=False) as tf:
             tf.write(file.getbuffer())
             path = tf.name
 
-        with st.session_state["upload_spinner"], st.spinner(f"Ingesting {file.name}..."):
+        with st.session_state["loading"], st.spinner(f"Ingesting {file.name}..."):
             st.session_state["pdf"].ingest(path)
 
 
 def main():
-    # Initialize session state
     if "messages" not in st.session_state:
         st.session_state["messages"] = []
 
-    if "hf_token" not in st.session_state:
-        st.session_state["hf_token"] = st.secrets.get("HF_TOKEN", "")
+    st.title("📄 ChatPDF — Powered by Groq Llama-3")
 
-    st.header("Free ChatPDF (HuggingFace API)")
-
-    # Token Input (Unique Key)
-    token = st.text_input(
-        "Your HuggingFace API Token",
-        value=st.session_state["hf_token"],
-        key="hf_token_input_key",
+    # API KEY
+    groq_key = st.text_input(
+        "Enter your GROQ API key",
+        value=st.secrets.get("GROQ_API_KEY", ""),
         type="password",
-        help="Get a free token at: https://huggingface.co/settings/tokens"
+        key="groq_key_input",
     )
 
-    if token and token != st.session_state["hf_token"]:
-        st.session_state["hf_token"] = token
-        st.session_state["pdf"] = PDFQuery(token)
-        st.session_state["messages"] = []
-
-    if "pdf" not in st.session_state:
-        st.session_state["pdf"] = PDFQuery(st.session_state["hf_token"])
-
-    if not st.session_state["hf_token"]:
-        st.warning("Please enter your HuggingFace token to continue.")
+    if not groq_key:
+        st.info("Get your free key: https://console.groq.com/keys")
         st.stop()
 
-    # Upload PDFs
+    if "pdf" not in st.session_state:
+        st.session_state["pdf"] = PDFQuery(groq_key)
+
+    # PDF UPLOAD
     st.subheader("Upload PDF(s)")
     st.file_uploader(
-        "Upload PDF files",
+        "Choose PDF files",
         type=["pdf"],
-        key="uploaded_pdf_files",
+        key="pdf_files",
         accept_multiple_files=True,
-        on_change=upload_pdf,
+        on_change=on_pdf_upload,
     )
 
-    st.session_state["upload_spinner"] = st.empty()
+    st.session_state["loading"] = st.empty()
 
-    # Chat Window
-    display_messages()
+    # CHAT
+    show_messages()
 
     st.text_input(
-        "Ask something...",
+        "Ask a question...",
         key="chat_input",
-        on_change=process_input
+        on_change=on_user_message,
     )
 
 
